@@ -1,17 +1,15 @@
 '''Libraries for Prototype selection'''
 import numpy as np
 from sklearn.datasets import load_breast_cancer
-from sklearn.datasets import load_iris
 from sklearn.datasets import load_digits
 import cvxpy as cvx
 import math as mt
 from sklearn.model_selection import KFold
 import sklearn.metrics
 
-
 class classifier():
     '''Contains functions for prototype selection'''
-    def __init__(self, X, y, epsilon_, lambda_ ):
+    def __init__(self, X, y, epsilon_, lambda_):
         '''Store data points as unique indexes, and initialize 
         the required member variables eg. epsilon, lambda, 
         interpoint distances, points in neighborhood'''
@@ -19,6 +17,9 @@ class classifier():
         self.y = y
         self.epsilon = epsilon_
         self.lambda_ = lambda_
+        
+        self.init_Xl()
+        self.cal_region_set()
 
     '''Implement modules which will be useful in the train_lp() function
     for example
@@ -29,11 +30,26 @@ class classifier():
     use of the above modules and member variables defined by you
     5) any other module that you deem fit and useful for the purpose.'''
 
-    
     def train_lp(self, verbose = False):
         '''Implement the linear programming formulation 
         and solve using cvxpy for prototype selection'''
+        self.alpha_l = list()
+        self.xi_l = list()
+        for i in range(len(self.Xl)):
+            alpha = cvx.Variable((self.X[i].shape[0], ))
+            xi = cvx.Variable((self.Xl[i].shape[0], ))
+            
+            Cl_j = self.calc_Cl_j(i)
+            M = self.calc_M(l)
+
+            constraints = [alpha >= 0, alpha <= 1, \
+                           xi >= 0]
         
+            obj = cvx.Minimize(np.dot(alpha, Cl_j) + sum(xi))
+
+            prob = cvx.Problem(obj, constraints)
+            prob.solve()
+
     def objective_value(self):
         '''Implement a function to compute the objective value of the integer optimization
         problem after the training phase'''
@@ -41,6 +57,45 @@ class classifier():
     def predict(self, instances):
         '''Predicts the label for an array of instances using the framework learnt'''
 
+    def init_Xl(self):
+        y_labels = set()
+        for i in range(self.y.shape[0]):
+            y_labels.add(self.y[i])
+        y_labels = list(y_labels)
+
+        self.Xl_index = list()
+        for i in range(len(y_labels)):
+            index = set()
+            for j in range(self.y.shape[0]):
+                if(self.y[j] == i):
+                    index.add(j)
+            self.Xl_index.append(index)
+
+        self.Xl = list()
+        for i in range(len(y_labels)):
+            self.Xl.append(self.X[list(self.Xl_index[i]), : ]) 
+
+    def cal_region_set(self):
+        self.region = list()
+        for i in range(self.X.shape[0]):
+            B_xj = set()
+            for j in range(self.X.shape[0]):
+                if(np.linalg.norm(self.X[i , : ] - self.X[j, : ]) < self.epsilon):
+                    B_xj.add(j)
+            self.region.append(B_xj)
+
+    def calc_Cl_j(self, l):
+        Cl_j = np.zeros((self.X.shape[0], ))
+        for i in range(Cl_j.shape[0]):
+            Cl_j[i, 0] = self.lambda_ + len(self.region[i] | (set(range(self.X.shape[0])) - self.Xl_index[l]))
+        return Cl_j
+
+    def calc_M(self, l):
+        M = np.zeros((self.Xl[l].shape[0], self.X.shape[0]))
+        for j in range(self.X.shape[0]):
+            for i in range(self.Xl[l].shape[0]):
+                if(self.region[j])
+        return M
 
 def cross_val(data, target, epsilon_, lambda_, k, verbose):
     '''Implement a function which will perform k fold cross validation 
