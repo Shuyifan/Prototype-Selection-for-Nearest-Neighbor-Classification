@@ -1,4 +1,3 @@
-'''Libraries for Prototype selection'''
 import numpy as np
 from sklearn.datasets import load_breast_cancer
 from sklearn.datasets import load_digits
@@ -62,6 +61,7 @@ class classifier():
         
         self.Alpha_l = list()
         self.Xi_l = list()
+        self.prots = 0
         for i in range(len(self.alpha_l)):
             Alpha = np.zeros((self.X.shape[0], 1))
             Xi = np.zeros((self.Xl[i].shape[0], 1))
@@ -79,27 +79,46 @@ class classifier():
                     Xi = np.maximum(Xi, X)
                     if(self.is_feasible(Alpha, Xi, i)):
                         break
+            self.prots = self.prots + np.sum(Alpha)
             self.Alpha_l.append(Alpha)
             self.Xi_l.append(Xi)
 
     def objective_value(self):
         '''Implement a function to compute the objective value of the integer optimization
         problem after the training phase'''
-        
+        optimal_value = 0
+        for i in range(len(self.Alpha_l)):
+            optimal_value = optimal_value + np.sum(np.dot(self.Alpha_l[i].T, self.Cl_j[i])) + np.sum(self.Xi_l[i])
+        return optimal_value
 
 
     def predict(self, instances):
         '''Predicts the label for an array of instances using the framework learnt'''
+        pred_y = np.zeros((instances.shape[0], ))
+        for i in range(pred_y.shape[0]):
+            min_distance_l = float("inf")
+            pred_label_index = 0
+            for label in range(len(self.y_labels)):
+                min_distance = float("inf")
+                for j in range(self.Alpha_l[label].shape[0]):
+                    if(self.Alpha_l[label][j, 0] == 1):
+                        min_distance = min(min_distance, np.linalg.norm(instances[i, : ] - self.X[j, : ]))
+                if(min_distance < min_distance_l):
+                    min_distance_l = min_distance
+                    pred_label_index = label
+            pred_y[i] = self.y_labels[pred_label_index]
+        return pred_y
 
     def init_Xl(self):
-        y_labels = set()
+        self.y_labels = set()
         for i in range(self.y.shape[0]):
-            y_labels.add(self.y[i])
-        y_labels = list(y_labels)
+            self.y_labels.add(self.y[i])
+        self.y_labels = list(self.y_labels)
 
         self.Xl_index_set = list()
         self.X1_index_list = list()
-        for i in range(len(y_labels)):
+        
+        for i in range(len(self.y_labels)):
             index = set()
             for j in range(self.y.shape[0]):
                 if(self.y[j] == i):
@@ -108,7 +127,7 @@ class classifier():
             self.Xl_index_set.append(index)
 
         self.Xl = list()
-        for i in range(len(y_labels)):
+        for i in range(len(self.y_labels)):
             self.Xl.append(self.X[self.X1_index_list[i], : ])
 
     def cal_region_set(self):
@@ -141,19 +160,22 @@ class classifier():
             return False
         return True
 
-def cross_val(data, target, epsilon_, lambda_, k, verbose):
-    '''Implement a function which will perform k fold cross validation 
-    for the given epsilon and lambda and returns the average test error and number of prototypes'''
-    kf = KFold(n_splits=k, random_state = 42)
-    score = 0
-    prots = 0
-    for train_index, test_index in kf.split(data):
-        ps = classifier(data[train_index], target[train_index], epsilon_, lambda_)
-        ps.train_lp(verbose)
-        obj_val += ps.objective_value()
-        score += sklearn.metrics.accuracy_score(target[test_index], ps.predict(data[test_index]))
-        '''implement code to count the total number of prototypes learnt and store it in prots'''
-    score /= k    
-    prots /= k
-    obj_val /= k
-    return score, prots, obj_val
+    @staticmethod
+    def cross_val(data, target, epsilon_, lambda_, k, verbose):
+        '''Implement a function which will perform k fold cross validation 
+        for the given epsilon and lambda and returns the average test error and number of prototypes'''
+        kf = KFold(n_splits=k, random_state = 42)
+        score = 0
+        prots = 0
+        obj_val = 0
+        for train_index, test_index in kf.split(data):
+            ps = classifier(data[train_index], target[train_index], epsilon_, lambda_)
+            ps.train_lp(verbose)
+            obj_val += ps.objective_value()
+            score += sklearn.metrics.accuracy_score(target[test_index], ps.predict(data[test_index]))
+            '''implement code to count the total number of prototypes learnt and store it in prots'''
+            prots += ps.prots
+        score /= k    
+        prots /= k
+        obj_val /= k
+        return score, prots, obj_val
