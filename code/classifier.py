@@ -35,27 +35,59 @@ class classifier():
         and solve using cvxpy for prototype selection'''
         self.alpha_l = list()
         self.xi_l = list()
+        self.Cl_j = list()
+        self.M_l = list()
+        self.LP_object_l = list()
+
         for i in range(len(self.Xl)):
             alpha = cvx.Variable((self.X.shape[0], 1))
             xi = cvx.Variable((self.Xl[i].shape[0], 1))
             
-            Cl_j = self.calc_Cl_j(i)
+            C_j = self.calc_Cl_j(i)
             M = self.calc_M(i)
+
+            self.Cl_j.append(C_j)
+            self.M_l.append(M)
 
             constraints = [alpha >= 0, alpha <= 1, xi >= 0, M * alpha >= 1 - xi]
         
-            obj = cvx.Minimize(sum(alpha.T * Cl_j) + sum(xi))
+            obj = cvx.Minimize(sum(alpha.T * C_j) + sum(xi))
 
             prob = cvx.Problem(obj, constraints)
-            prob.solve(verbose = True)
+            prob.solve(verbose = verbose)
 
             self.alpha_l.append(alpha)
             self.xi_l.append(xi)
+            self.LP_object_l.append(prob.value)
+        
+        self.Alpha_l = list()
+        self.Xi_l = list()
+        for i in range(len(self.alpha_l)):
+            Alpha = np.zeros((self.X.shape[0], 1))
+            Xi = np.zeros((self.Xl[i].shape[0], 1))
+            while(not self.is_feasible(Alpha, Xi, i)):
+                for _t in range(2 * mt.ceil(np.log2(self.Xl[i].shape[0]))):
+                    temp_alpha = self.alpha_l[i].value
+                    temp_xi = self.xi_l[i].value
+                    temp_alpha[temp_alpha < 0] = 0
+                    temp_alpha[temp_alpha > 1] = 1
+                    temp_xi[temp_xi < 0] = 0
+                    temp_xi[temp_xi > 1] = 1
+                    A = np.random.binomial(1, p = temp_alpha)
+                    X = np.random.binomial(1, p = temp_xi)
+                    Alpha = np.maximum(Alpha, A)
+                    Xi = np.maximum(Xi, X)
+                    if(self.is_feasible(Alpha, Xi, i)):
+                        break
+            self.Alpha_l.append(Alpha)
+            self.Xi_l.append(Xi)
 
     def objective_value(self):
         '''Implement a function to compute the objective value of the integer optimization
         problem after the training phase'''
         
+
+
     def predict(self, instances):
         '''Predicts the label for an array of instances using the framework learnt'''
 
@@ -101,6 +133,13 @@ class classifier():
                 if(self.X1_index_list[l][i] in self.region[j]):
                     M[i, j] = 1
         return M
+
+    def is_feasible(self, Alpha, Xi, l):
+        if(np.any(np.dot(self.M_l[l], Alpha) < 1 - Xi)):
+            return False
+        if(np.sum(np.dot(Alpha.T, self.Cl_j[l])) + np.sum(Xi) > 2 * np.log2(Xi.shape[0]) * self.LP_object_l[l]):
+            return False
+        return True
 
 def cross_val(data, target, epsilon_, lambda_, k, verbose):
     '''Implement a function which will perform k fold cross validation 
