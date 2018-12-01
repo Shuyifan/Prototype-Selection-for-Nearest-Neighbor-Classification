@@ -16,7 +16,7 @@ class classifier():
         self.X = X
         self.y = y
         self.epsilon = epsilon_
-        self.lambda_ = lambda_
+        self.lambda_ = 1.0 / X.shape[0]
         
         self.init_Xl()
         self.cal_region_set()
@@ -36,19 +36,21 @@ class classifier():
         self.alpha_l = list()
         self.xi_l = list()
         for i in range(len(self.Xl)):
-            alpha = cvx.Variable((self.X[i].shape[0], ))
-            xi = cvx.Variable((self.Xl[i].shape[0], ))
+            alpha = cvx.Variable((self.X.shape[0], 1))
+            xi = cvx.Variable((self.Xl[i].shape[0], 1))
             
             Cl_j = self.calc_Cl_j(i)
-            M = self.calc_M(l)
+            M = self.calc_M(i)
 
-            constraints = [alpha >= 0, alpha <= 1, \
-                           xi >= 0]
+            constraints = [alpha >= 0, alpha <= 1, xi >= 0, M * alpha >= 1 - xi]
         
-            obj = cvx.Minimize(np.dot(alpha, Cl_j) + sum(xi))
+            obj = cvx.Minimize(sum(alpha.T * Cl_j) + sum(xi))
 
             prob = cvx.Problem(obj, constraints)
-            prob.solve()
+            prob.solve(verbose = True)
+
+            self.alpha_l.append(alpha)
+            self.xi_l.append(xi)
 
     def objective_value(self):
         '''Implement a function to compute the objective value of the integer optimization
@@ -63,17 +65,19 @@ class classifier():
             y_labels.add(self.y[i])
         y_labels = list(y_labels)
 
-        self.Xl_index = list()
+        self.Xl_index_set = list()
+        self.X1_index_list = list()
         for i in range(len(y_labels)):
             index = set()
             for j in range(self.y.shape[0]):
                 if(self.y[j] == i):
                     index.add(j)
-            self.Xl_index.append(index)
+            self.X1_index_list.append(list(index))
+            self.Xl_index_set.append(index)
 
         self.Xl = list()
         for i in range(len(y_labels)):
-            self.Xl.append(self.X[list(self.Xl_index[i]), : ]) 
+            self.Xl.append(self.X[self.X1_index_list[i], : ])
 
     def cal_region_set(self):
         self.region = list()
@@ -85,16 +89,17 @@ class classifier():
             self.region.append(B_xj)
 
     def calc_Cl_j(self, l):
-        Cl_j = np.zeros((self.X.shape[0], ))
+        Cl_j = np.zeros((self.X.shape[0], 1))
         for i in range(Cl_j.shape[0]):
-            Cl_j[i, 0] = self.lambda_ + len(self.region[i] | (set(range(self.X.shape[0])) - self.Xl_index[l]))
+            Cl_j[i, 0] = self.lambda_ + len(self.region[i] & (set(range(self.X.shape[0])) - self.Xl_index_set[l]))
         return Cl_j
 
     def calc_M(self, l):
         M = np.zeros((self.Xl[l].shape[0], self.X.shape[0]))
-        for j in range(self.X.shape[0]):
-            for i in range(self.Xl[l].shape[0]):
-                if(self.region[j])
+        for i in range(self.Xl[l].shape[0]):
+            for j in range(self.X.shape[0]):
+                if(self.X1_index_list[l][i] in self.region[j]):
+                    M[i, j] = 1
         return M
 
 def cross_val(data, target, epsilon_, lambda_, k, verbose):
