@@ -1,52 +1,103 @@
 import numpy as np
-from sklearn.datasets import load_breast_cancer
-from sklearn.datasets import load_digits
 import cvxpy as cvx
 import math as mt
 from sklearn.model_selection import KFold
 import sklearn.metrics
 
 class classifier():
-    '''Contains functions for prototype selection'''
+    """
+    This class implements a nearest neighbor classification with prototype selection.
+    The class contains the function with initialization, training, and predction.
+
+    :attribute X: the training dataset
+    :attribute y: the ground truth label of corresponding data in X
+    :attribute epsilon: the hyperparameter for the prototype selection, which indicates 
+                        the radius of region which is coverd by a prototype.
+    :attribute lambda: the hyperparameter for the prototype selection during the
+                       optimization part.
+    :attribute alpha_l: the optimization result (alpha) of the LP prblem for each label (l).
+    :attribute xi_l: the optimization result (xi) of the LP prblem for each label (l).
+    :attribute Alpha_l: the optimization result (Alpha) for each label (l) after using randomized 
+                        rounding approach to get a solution for the ILP.
+    :attribute Xi_l: the optimization result (Xi) for each label (l) after using randomized 
+                     rounding approach to get a solution for the ILP.
+    :attribute prots: the number of prototypes selected.
+
+    :type X: numpy.ndarray (shape: (n, p))
+    :type y: numpy.ndarray (shape: (n, ))
+    :type epsilon: float
+    :type lambda: float
+    :type alpha_l: list (length: l and each element inside it is numpy.ndarray.)
+    :type xi_l: list (length: l and each element inside it is numpy.ndarray.)
+    :type Alpha_l: list (length: l and each element inside it is numpy.ndarray.)
+    :type Xi_l: list (length: l and each element inside it is numpy.ndarray.)
+    :type prots: int
+    """
+
+
     def __init__(self, X, y, epsilon_, lambda_):
-        '''Store data points as unique indexes, and initialize 
-        the required member variables eg. epsilon, lambda, 
-        interpoint distances, points in neighborhood'''
+        """
+        The init function for the class. Initialize the needed attribute.
+        
+        :param X: the training dataset
+        :param y: the ground truth label of corresponding data in X
+        :param epsilon_: the hyperparameter for the prototype selection, which indicates 
+                         the radius of region which is coverd by a prototype.
+        :param lambda_: the hyperparameter for the prototype selection during the
+                        optimization part.
+
+        :type X: numpy.ndarray (shape: (n, p))
+        :type y: numpy.ndarray (shape: (n, ))
+        :type epsilon_: float
+        :type lambda_: float
+        """
         self.X = X
         self.y = y
         self.epsilon = epsilon_
         self.lambda_ = 1.0 / X.shape[0]
+        self.alpha_l = None
+        self.xi_l = None
+        self.Alpha_l = None
+        self.Xi_l = None
+        self.prots = None
         
-        self.init_Xl()
-        self.cal_region_set()
+        self.__LP_object_l = None
+        self.__Cl_j = None
+        self.__M_l = None
+        self.__y_labels = None
+        self.__Xl_index_set = None
+        self.__X1_index_list = None
+        self.__Xl = None
+        self.__region = None
 
-    '''Implement modules which will be useful in the train_lp() function
-    for example
-    1) operations such as intersection, union etc of sets of datapoints
-    2) check for feasibility for the randomized algorithm approach
-    3) compute the objective value with current prototype set
-    4) fill in the train_lp() module which will make 
-    use of the above modules and member variables defined by you
-    5) any other module that you deem fit and useful for the purpose.'''
+        self.__init_Xl()
+        self.__cal_region_set()
 
     def train_lp(self, verbose = False):
-        '''Implement the linear programming formulation 
-        and solve using cvxpy for prototype selection'''
+        """
+        The function to train the model using the class attribute.
+        
+        :param verbose: a boolean value used for the debugging process. If it is True,
+                        the function will show all the information during the training 
+                        step; if not, it will show nothing.
+
+        :type verbose: bool
+        """
         self.alpha_l = list()
         self.xi_l = list()
-        self.Cl_j = list()
-        self.M_l = list()
-        self.LP_object_l = list()
+        self.__Cl_j = list()
+        self.__M_l = list()
+        self.__LP_object_l = list()
 
-        for i in range(len(self.Xl)):
+        for i in range(len(self.__Xl)):
             alpha = cvx.Variable((self.X.shape[0], 1))
-            xi = cvx.Variable((self.Xl[i].shape[0], 1))
+            xi = cvx.Variable((self.__Xl[i].shape[0], 1))
             
-            C_j = self.calc_Cl_j(i)
-            M = self.calc_M(i)
+            C_j = self.__calc_Cl_j(i)
+            M = self.__calc_M(i)
 
-            self.Cl_j.append(C_j)
-            self.M_l.append(M)
+            self.__Cl_j.append(C_j)
+            self.__M_l.append(M)
 
             constraints = [alpha >= 0, alpha <= 1, xi >= 0, M * alpha >= 1 - xi]
         
@@ -57,16 +108,16 @@ class classifier():
 
             self.alpha_l.append(alpha)
             self.xi_l.append(xi)
-            self.LP_object_l.append(prob.value)
+            self.__LP_object_l.append(prob.value)
         
         self.Alpha_l = list()
         self.Xi_l = list()
         self.prots = 0
         for i in range(len(self.alpha_l)):
             Alpha = np.zeros((self.X.shape[0], 1))
-            Xi = np.zeros((self.Xl[i].shape[0], 1))
-            while(not self.is_feasible(Alpha, Xi, i)):
-                for _t in range(2 * mt.ceil(np.log2(self.Xl[i].shape[0]))):
+            Xi = np.zeros((self.__Xl[i].shape[0], 1))
+            while(not self.__is_feasible(Alpha, Xi, i)):
+                for _t in range(2 * mt.ceil(np.log2(self.__Xl[i].shape[0]))):
                     temp_alpha = self.alpha_l[i].value
                     temp_xi = self.xi_l[i].value
                     temp_alpha[temp_alpha < 0] = 0
@@ -77,28 +128,45 @@ class classifier():
                     X = np.random.binomial(1, p = temp_xi)
                     Alpha = np.maximum(Alpha, A)
                     Xi = np.maximum(Xi, X)
-                    if(self.is_feasible(Alpha, Xi, i)):
+                    if(self.__is_feasible(Alpha, Xi, i)):
                         break
             self.prots = self.prots + np.sum(Alpha)
             self.Alpha_l.append(Alpha)
             self.Xi_l.append(Xi)
 
     def objective_value(self):
-        '''Implement a function to compute the objective value of the integer optimization
-        problem after the training phase'''
+        """
+        A function to compute the objective value of the integer optimization problem after 
+        the training phase.
+
+        :returns optimal_value: the objective value of the integer optimization problem after 
+                                the training phase.
+
+        :rtype optimal_value: float
+        """
         optimal_value = 0
         for i in range(len(self.Alpha_l)):
-            optimal_value = optimal_value + np.sum(np.dot(self.Alpha_l[i].T, self.Cl_j[i])) + np.sum(self.Xi_l[i])
+            optimal_value = optimal_value + np.sum(np.dot(self.Alpha_l[i].T, self.__Cl_j[i])) + np.sum(self.Xi_l[i])
         return optimal_value
 
 
     def predict(self, instances):
-        '''Predicts the label for an array of instances using the framework learnt'''
+        """
+        Given an unseen data, this function is used to predict the label using the model we trained.
+        
+        :param instances: the unseen input dataset.
+
+        :type instances: numpy.ndarray (shape: (n, ))
+
+        :returns pred_y: the prediction labels.
+
+        :rtype pred_y: numpy.ndarray (shape: (n, ))
+        """
         pred_y = np.zeros((instances.shape[0], ))
         for i in range(pred_y.shape[0]):
             min_distance_l = float("inf")
             pred_label_index = 0
-            for label in range(len(self.y_labels)):
+            for label in range(len(self.__y_labels)):
                 min_distance = float("inf")
                 for j in range(self.Alpha_l[label].shape[0]):
                     if(self.Alpha_l[label][j, 0] == 1):
@@ -106,64 +174,43 @@ class classifier():
                 if(min_distance < min_distance_l):
                     min_distance_l = min_distance
                     pred_label_index = label
-            pred_y[i] = self.y_labels[pred_label_index]
+            pred_y[i] = self.__y_labels[pred_label_index]
         return pred_y
-
-    def init_Xl(self):
-        self.y_labels = set()
-        for i in range(self.y.shape[0]):
-            self.y_labels.add(self.y[i])
-        self.y_labels = list(self.y_labels)
-
-        self.Xl_index_set = list()
-        self.X1_index_list = list()
-        
-        for i in range(len(self.y_labels)):
-            index = set()
-            for j in range(self.y.shape[0]):
-                if(self.y[j] == i):
-                    index.add(j)
-            self.X1_index_list.append(list(index))
-            self.Xl_index_set.append(index)
-
-        self.Xl = list()
-        for i in range(len(self.y_labels)):
-            self.Xl.append(self.X[self.X1_index_list[i], : ])
-
-    def cal_region_set(self):
-        self.region = list()
-        for i in range(self.X.shape[0]):
-            B_xj = set()
-            for j in range(self.X.shape[0]):
-                if(np.linalg.norm(self.X[i , : ] - self.X[j, : ]) < self.epsilon):
-                    B_xj.add(j)
-            self.region.append(B_xj)
-
-    def calc_Cl_j(self, l):
-        Cl_j = np.zeros((self.X.shape[0], 1))
-        for i in range(Cl_j.shape[0]):
-            Cl_j[i, 0] = self.lambda_ + len(self.region[i] & (set(range(self.X.shape[0])) - self.Xl_index_set[l]))
-        return Cl_j
-
-    def calc_M(self, l):
-        M = np.zeros((self.Xl[l].shape[0], self.X.shape[0]))
-        for i in range(self.Xl[l].shape[0]):
-            for j in range(self.X.shape[0]):
-                if(self.X1_index_list[l][i] in self.region[j]):
-                    M[i, j] = 1
-        return M
-
-    def is_feasible(self, Alpha, Xi, l):
-        if(np.any(np.dot(self.M_l[l], Alpha) < 1 - Xi)):
-            return False
-        if(np.sum(np.dot(Alpha.T, self.Cl_j[l])) + np.sum(Xi) > 2 * np.log2(Xi.shape[0]) * self.LP_object_l[l]):
-            return False
-        return True
-
+    
     @staticmethod
     def cross_val(data, target, epsilon_, lambda_, k, verbose):
-        '''Implement a function which will perform k fold cross validation 
-        for the given epsilon and lambda and returns the average test error and number of prototypes'''
+        """
+        A static method to use a K-folder method to evaluate the performance of 
+        the nearest neighbor classifier with prototype selection using different 
+        hyperparameters.
+        
+        :param data: the input dataset.
+        :param target: the ground truth label of the input dataset.
+        :param epsilon_: the hyperparameter for the prototype selection, which indicates 
+                         the radius of region which is coverd by a prototype.
+        :param lambda_: the hyperparameter for the prototype selection during the
+                        optimization part.
+        :param k: the number of folder we split for the K-folder validation method.
+        :param verbose: a boolean value used for the debugging process. If it is True,
+                        the function will show all the information during the training 
+                        step; if not, it will show nothing.
+
+        :type data: numpy.ndarray (shape: (n, p))
+        :type target: numpy.ndarray (shape: (n, ))
+        :type epsilon_: float
+        :type lambda_: float
+        :type k: int
+        :type verbose: bool
+
+        :returns score: the average accuracy of the model after using K-folder validation.
+        :returns prots: the average number of prototypes the model generated 
+                        using K-folder validation.
+        :returns obj_val: the average objective value of the model after using K-folder validation.
+
+        :rtype score: float
+        :rtype prots: float
+        :rtype obj_val: float
+        """
         kf = KFold(n_splits=k, random_state = 42)
         score = 0
         prots = 0
@@ -173,9 +220,59 @@ class classifier():
             ps.train_lp(verbose)
             obj_val += ps.objective_value()
             score += sklearn.metrics.accuracy_score(target[test_index], ps.predict(data[test_index]))
-            '''implement code to count the total number of prototypes learnt and store it in prots'''
             prots += ps.prots
         score /= k    
         prots /= k
         obj_val /= k
         return score, prots, obj_val
+
+    def __init_Xl(self):
+        self.__y_labels = set()
+        for i in range(self.y.shape[0]):
+            self.__y_labels.add(self.y[i])
+        self.__y_labels = list(self.__y_labels)
+
+        self.__Xl_index_set = list()
+        self.__X1_index_list = list()
+        
+        for i in range(len(self.__y_labels)):
+            index = set()
+            for j in range(self.y.shape[0]):
+                if(self.y[j] == i):
+                    index.add(j)
+            self.__X1_index_list.append(list(index))
+            self.__Xl_index_set.append(index)
+
+        self.__Xl = list()
+        for i in range(len(self.__y_labels)):
+            self.__Xl.append(self.X[self.__X1_index_list[i], : ])
+
+    def __cal_region_set(self):
+        self.__region = list()
+        for i in range(self.X.shape[0]):
+            B_xj = set()
+            for j in range(self.X.shape[0]):
+                if(np.linalg.norm(self.X[i , : ] - self.X[j, : ]) < self.epsilon):
+                    B_xj.add(j)
+            self.__region.append(B_xj)
+
+    def __calc_Cl_j(self, l):
+        Cl_j = np.zeros((self.X.shape[0], 1))
+        for i in range(Cl_j.shape[0]):
+            Cl_j[i, 0] = self.lambda_ + len(self.__region[i] & (set(range(self.X.shape[0])) - self.__Xl_index_set[l]))
+        return Cl_j
+
+    def __calc_M(self, l):
+        M = np.zeros((self.__Xl[l].shape[0], self.X.shape[0]))
+        for i in range(self.__Xl[l].shape[0]):
+            for j in range(self.X.shape[0]):
+                if(self.__X1_index_list[l][i] in self.__region[j]):
+                    M[i, j] = 1
+        return M
+
+    def __is_feasible(self, Alpha, Xi, l):
+        if(np.any(np.dot(self.__M_l[l], Alpha) < 1 - Xi)):
+            return False
+        if(np.sum(np.dot(Alpha.T, self.__Cl_j[l])) + np.sum(Xi) > 2 * np.log2(Xi.shape[0]) * self.__LP_object_l[l]):
+            return False
+        return True
