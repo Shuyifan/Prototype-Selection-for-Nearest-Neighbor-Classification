@@ -176,6 +176,22 @@ class classifier():
                     pred_label_index = label
             pred_y[i] = self.__y_labels[pred_label_index]
         return pred_y
+
+    def cover_error(self):
+        """
+        Return the cover error for the current trained model.
+
+        :returns cover_err: the cover error for the current trained model
+
+        :rtype pred_y: float
+        """
+        cover = set()
+        for i in range(len(self.Alpha_l)):
+            for j in range(self.Alpha_l[i].shape[0]):
+                if(self.Alpha_l[i][j, 0] == 1):
+                    cover = cover | self.__region[j]
+        cover_err = 1.0 - float(len(cover)) / self.X.shape[0]
+        return cover_err
     
     @staticmethod
     def cross_val(data, target, epsilon_, lambda_, k, verbose):
@@ -206,25 +222,30 @@ class classifier():
         :returns prots: the average number of prototypes the model generated 
                         using K-folder validation.
         :returns obj_val: the average objective value of the model after using K-folder validation.
+        :returns cover_error: the average cover error of the model after using K-folder validation.
 
         :rtype score: float
         :rtype prots: float
         :rtype obj_val: float
+        :rtype cover_error: float
         """
         kf = KFold(n_splits=k, random_state = 42)
         score = 0
         prots = 0
         obj_val = 0
+        cover_error = 0
         for train_index, test_index in kf.split(data):
             ps = classifier(data[train_index], target[train_index], epsilon_, lambda_)
             ps.train_lp(verbose)
             obj_val += ps.objective_value()
             score += sklearn.metrics.accuracy_score(target[test_index], ps.predict(data[test_index]))
             prots += ps.prots
+            cover_error = ps.cover_error()
         score /= k    
         prots /= k
         obj_val /= k
-        return score, prots, obj_val
+        cover_error /= k
+        return score, prots, obj_val, cover_error
 
     def __init_Xl(self):
         self.__y_labels = set()
