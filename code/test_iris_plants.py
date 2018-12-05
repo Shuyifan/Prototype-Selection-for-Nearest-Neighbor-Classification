@@ -1,5 +1,4 @@
 from sklearn.datasets import load_iris
-from sklearn.datasets import load_digits
 from classifier import classifier
 
 iris = load_iris()
