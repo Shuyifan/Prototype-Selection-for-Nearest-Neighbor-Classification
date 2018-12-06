@@ -22,6 +22,7 @@ class classifier():
     :attribute Xi_l: the optimization result (Xi) for each label (l) after using randomized 
                      rounding approach to get a solution for the ILP.
     :attribute prots: the number of prototypes selected.
+    :attribute norm: the norm type used to calculate the region inside epilson.
 
     :type X: numpy.ndarray (shape: (n, p))
     :type y: numpy.ndarray (shape: (n, ))
@@ -32,10 +33,11 @@ class classifier():
     :type Alpha_l: list (length: l and each element inside it is numpy.ndarray.)
     :type Xi_l: list (length: l and each element inside it is numpy.ndarray.)
     :type prots: int
+    :type norm: int
     """
 
 
-    def __init__(self, X, y, epsilon_, lambda_):
+    def __init__(self, X, y, epsilon_, lambda_, norm = 2):
         """
         The init function for the class. Initialize the needed attribute.
         
@@ -45,11 +47,13 @@ class classifier():
                          the radius of region which is coverd by a prototype.
         :param lambda_: the hyperparameter for the prototype selection during the
                         optimization part.
+        :param norm: define the norm type to calculate the region inside epilson.
 
         :type X: numpy.ndarray (shape: (n, p))
         :type y: numpy.ndarray (shape: (n, ))
         :type epsilon_: float
         :type lambda_: float
+        :type norm: int
         """
         self.X = X
         self.y = y
@@ -60,7 +64,8 @@ class classifier():
         self.Alpha_l = None
         self.Xi_l = None
         self.prots = None
-        
+        self.norm = norm
+
         self.__LP_object_l = None
         self.__Cl_j = None
         self.__M_l = None
@@ -172,7 +177,8 @@ class classifier():
                 min_distance = float("inf")
                 for j in range(self.Alpha_l[label].shape[0]):
                     if(self.Alpha_l[label][j, 0] == 1):
-                        min_distance = min(min_distance, np.linalg.norm(instances[i, : ] - self.X[j, : ]))
+                        min_distance = min(min_distance, \
+                                           np.linalg.norm(instances[i, : ] - self.X[j, : ], ord = self.norm))
                 if(min_distance < min_distance_l):
                     min_distance_l = min_distance
                     pred_label_index = label
@@ -196,7 +202,7 @@ class classifier():
         return cover_err
     
     @staticmethod
-    def cross_val(data, target, epsilon_, lambda_, k, verbose):
+    def cross_val(data, target, epsilon_, lambda_, k, verbose, norm = 2):
         """
         A static method to use a K-folder method to evaluate the performance of 
         the nearest neighbor classifier with prototype selection using different 
@@ -212,6 +218,7 @@ class classifier():
         :param verbose: a boolean value used for the debugging process. If it is True,
                         the function will show all the information during the training 
                         step; if not, it will show nothing.
+        :param norm: define the norm type to calculate the region inside epilson.
 
         :type data: numpy.ndarray (shape: (n, p))
         :type target: numpy.ndarray (shape: (n, ))
@@ -219,6 +226,7 @@ class classifier():
         :type lambda_: float
         :type k: int
         :type verbose: bool
+        :type norm: int
 
         :returns score: the average accuracy of the model after using K-folder validation.
         :returns prots: the average number of prototypes the model generated 
@@ -237,7 +245,7 @@ class classifier():
         obj_val = 0
         cover_error = 0
         for train_index, test_index in kf.split(data):
-            ps = classifier(data[train_index], target[train_index], epsilon_, lambda_)
+            ps = classifier(data[train_index], target[train_index], epsilon_, lambda_, norm = norm)
             ps.train_lp(verbose)
             obj_val += ps.objective_value()
             score += sklearn.metrics.accuracy_score(target[test_index], ps.predict(data[test_index]))
@@ -275,7 +283,7 @@ class classifier():
         for i in range(self.X.shape[0]):
             B_xj = set()
             for j in range(self.X.shape[0]):
-                if(np.linalg.norm(self.X[i , : ] - self.X[j, : ]) < self.epsilon):
+                if(np.linalg.norm(self.X[i , : ] - self.X[j, : ], ord = self.norm) < self.epsilon):
                     B_xj.add(j)
             self.__region.append(B_xj)
 

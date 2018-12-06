@@ -11,13 +11,16 @@ y = digits.target
 
 D = distance_matrix(X, X)
 
-obj_vals = list()
+p_list = list()
+obj_list = list()
 for i in range(2, 41, 2):
     p = np.percentile(D, i)
-    _, _, obj_val, _ = classifier.cross_val(X, y, p, 1, 4, False)
-    obj_vals.append(obj_val)
+    p_list.append(p)
+    _, _, obj, _ = classifier.cross_val(X, y, p, 1, 4, False)
+    obj_list.append(obj)
+    print(i)
 
-ps = list(list(range(2, 41, 2)))
-
-plt.plot(ps, obj_vals)
-plt.show()
+plt.figure(1)
+new_p_list, new_obj_list = zip(*sorted(zip(p_list, obj_list)))
+plt.plot(new_p_list, new_obj_list)
+plt.show(block=True)
