@@ -294,6 +294,11 @@ class classifier():
     def __is_feasible(self, Alpha, Xi, l):
         if(np.any(np.dot(self.__M_l[l], Alpha) < 1 - Xi)):
             return False
-        if(np.sum(np.dot(Alpha.T, self.__Cl_j[l])) + np.sum(Xi) > 2 * np.log2(Xi.shape[0]) * self.__LP_object_l[l]):
+        alpha_LP = self.alpha_l[l].value
+        xi_LP = self.xi_l[l].value
+        alpha_LP[alpha_LP < 0] = 0
+        xi_LP[xi_LP < 0] = 0
+        obj_LP = np.sum(np.dot(alpha_LP.T, self.__Cl_j[l])) + np.sum(xi_LP)
+        if(np.sum(np.dot(Alpha.T, self.__Cl_j[l])) + np.sum(Xi) > 2 * np.log2(Xi.shape[0]) * obj_LP):
             return False
         return True
