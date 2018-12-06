@@ -117,6 +117,8 @@ class classifier():
             Alpha = np.zeros((self.X.shape[0], 1))
             Xi = np.zeros((self.__Xl[i].shape[0], 1))
             while(not self.__is_feasible(Alpha, Xi, i)):
+                Alpha = np.zeros((self.X.shape[0], 1))
+                Xi = np.zeros((self.__Xl[i].shape[0], 1))
                 for _t in range(2 * mt.ceil(np.log2(self.__Xl[i].shape[0]))):
                     temp_alpha = self.alpha_l[i].value
                     temp_xi = self.xi_l[i].value
